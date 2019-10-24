@@ -1,0 +1,20 @@
+> If I take a string from an NSTextField with an accented character: café and I
+> make this into a file name and write a file, then I read that file name back in
+> (using NSFileManager contentsOfDirectoryAtPath), then the string read back in,
+> still looks the same: an accented café, but the strings don't compare anymore.
+> The one in the text field was unichars: 99,97,102,233 and the one in the file
+> name is now    99,97,102,101,769.
+>
+> What does it mean, and how can I make sure I get them both the same and
+> comparable?
+
+In Unicode, certain characters have two representations.  'é' is the classic example, actually.  It can be represented by a single code point (LATIN SMALL LETTER E WITH ACUTE, U+00E9) or as two (LATIN SMALL LETTER E, U+0065, followed by COMBINING ACUTE ACCENT, U+0301).
+
+The Mac file system APIs and internals have a preference for which to use.  There's a Apple-specific variant of Normalization Form D.  Anyway, the APIs will generally accept either, but may convert certain characters from the composed form (one character) to the decomposed form (two characters).  When you obtain file names from the APIs, they will be in the canonical form.
+http://developer.apple.com/library/mac/#technotes/tn/tn1150.html#UnicodeSubtleties
+
+Normally, you don't want to compare file paths.  In addition to the Unicode normalization issue, it's not easy to tell which components of a file path are on a case-sensitive file system and which are on a case-insenstive one.  Using the old-style FSCompareFSRefs() function is one good way to compare files references.  A more modern way might be to create file-reference NSURLs and then compare them for equality (-isEqual:).  (I _think_ that works.)  You can't reliably compare file-path URLs any more than file path strings.  You can also use -[NSFileManager attributesOfItemAtPath:error:] on the two paths and compare their NSFileDeviceIdentifier and NSFileSystemFileNumber.  You have to compare both, since the latter is only unique within a device.
+
+You can compare strings with -[NSString -compare:] method (or one of its variants).  So long as you leave out the NSLiteralSearch option from those which take options, the comparison will ignore differences due only to composed vs. decomposed characters.  The -isEqual: and -isEqualToString: methods imply NSLiteralSearch, so they are too strict.  You might also include the NSCaseInsensitiveSearch option, but, again, it's not always correct to compare file paths case-insensitively.
+
+You can get a C-style string using -[NSString fileSystemRepresentation], and that will be in the canonical form.  You can then recreate an NSString from that using -[NSFileManager stringWithFileSystemRepresentation:length:].  By going through the round trip, you can obtain a canonicalized NSString.  However, this should normally not be necessary.  Comparing the file references using the proper API is ideal and using a non-literal compare should usually suffice in other cases.
